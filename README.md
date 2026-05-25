@@ -6,6 +6,8 @@ This repository does not redistribute Codex binaries. It only patches a local Co
 
 - preventing the desktop app from removing `remote_control` from `~/.codex/config.toml`
 - starting the bundled app-server with `--remote-control`
+- enabling `goals` in `~/.codex/config.toml`
+- ensuring the local Codex sqlite state DB has the `thread_goals` table used by `/목표`
 - keeping a timestamped backup of `app.asar`
 
 ## Supported Target
@@ -33,6 +35,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Enable-CodexRemoteControl.ps1
 ```
 
 The script stops the running Codex desktop app while patching, then starts it again.
+
+For the goals sqlite fix, the script uses `python`/`py` first and falls back to `sqlite3` if available. It creates timestamped `.bak-goals-*` backups before touching Codex sqlite files.
 
 ## Verify
 

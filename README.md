@@ -1,73 +1,91 @@
 # Codex Remote Control Patch
 
-PowerShell patch script for enabling Codex app-server remote control in the Windows Codex desktop app.
+Utilities for enabling Codex Desktop remote control on Windows.
 
-This repository does not redistribute Codex binaries. It only patches a local Codex installation by:
+This repository does not redistribute Codex binaries. It only contains local scripts.
 
-- preventing the desktop app from removing `remote_control` from `~/.codex/config.toml`
-- starting the bundled app-server with `--remote-control`
-- enabling `goals` in `~/.codex/config.toml`
-- ensuring the local Codex sqlite state DB has the `thread_goals` table used by `/목표`
-- keeping a timestamped backup of `app.asar`
+## Current Recommended Path
 
-## Supported Target
+The validated path is to run a separate bundled `codex.exe app-server` process with `--remote-control`.
 
-This was tested against the Windows **Codex Offline** desktop app installed under:
+This avoids modifying:
 
-```powershell
-$env:LOCALAPPDATA\Programs\Codex Offline\_internal\app
-```
+- `app.asar`
+- `~/.codex/config.toml`
+- packaged Codex binaries
 
-Other builds may have different bundled JavaScript and may need an updated patch pattern.
-
-## Usage
-
-Open PowerShell and run:
+Install auto-start:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\Enable-CodexRemoteControl.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-CodexRemoteControlAutoStart.ps1
 ```
 
-If Codex is installed somewhere else:
+Start or verify manually:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\Enable-CodexRemoteControl.ps1 -AppRoot "C:\Path\To\Codex\_internal\app"
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-CodexRemoteControlServer.ps1
 ```
 
-The script stops the running Codex desktop app while patching, then starts it again.
+Expected status:
 
-For the goals sqlite fix, the script uses `python`/`py` first and falls back to `sqlite3` if available. It creates timestamped `.bak-goals-*` backups before touching Codex sqlite files.
+```json
+{
+  "status": "connected"
+}
+```
 
-## Verify
+The auto-start installer first tries Windows Task Scheduler. If that is denied by policy, it falls back to:
 
-After running the script, check the bundled app-server process:
+```text
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexRemoteControlServer
+```
+
+## App.asar Patch
+
+`scripts\Enable-CodexRemoteControl.ps1` is the older app.asar patch path. Treat it as experimental for current Codex Desktop builds.
+
+Important notes:
+
+- Do not add `remote_control = true` blindly to `config.toml`; if it lands under an env table it can break startup with `invalid type: boolean true, expected a string`.
+- Recent app packages include integrity metadata. Same-length byte replacements alone may not be enough.
+- Always keep a timestamped `app.asar` backup and verify app startup after patching.
+
+## Verify Running Process
 
 ```powershell
 Get-CimInstance Win32_Process |
-  Where-Object { $_.Name -eq "codex.exe" -and $_.CommandLine -match "--remote-control" } |
+  Where-Object {
+    $_.Name -eq "codex.exe" -and
+    $_.CommandLine -match "app-server" -and
+    $_.CommandLine -match "--remote-control"
+  } |
   Select-Object ProcessId, CommandLine
 ```
 
-You should see:
+You should see a process like:
 
 ```text
-codex.exe app-server --remote-control --analytics-default-enabled
+codex.exe app-server --listen ws://127.0.0.1:47658 --analytics-default-enabled --remote-control
 ```
 
 ## Restore
 
-The patch script creates backups next to `app.asar`, for example:
+For the auto-start path:
 
-```text
-app.asar.bak-remote-control-20260522-095612
+```powershell
+Remove-ItemProperty `
+  -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
+  -Name "CodexRemoteControlServer" `
+  -ErrorAction SilentlyContinue
 ```
 
-To restore manually:
+Then stop the remote-control server process:
 
-1. Exit Codex.
-2. Replace `resources\app.asar` with one of the backup files.
-3. Start Codex again.
-
-## Notes
-
-Codex app updates or reinstalls can replace `app.asar`, which removes the patch. Run the script again after updating if remote control stops working.
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.Name -eq "codex.exe" -and
+    $_.CommandLine -match "--remote-control"
+  } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```

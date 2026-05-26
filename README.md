@@ -6,7 +6,25 @@ This repository does not redistribute Codex binaries. It only contains local scr
 
 ## Current Recommended Path
 
-The validated path is to run a separate bundled `codex.exe app-server` process with `--remote-control`.
+The validated integrated path patches Codex Desktop's `app.asar` and refreshes the embedded Electron `AsarIntegrity` hash in `Codex.exe`.
+
+Apply the integrated patch:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Apply-CodexAppAsarRemoteControlPatchWithExeIntegrity.ps1
+```
+
+The patch verifies that the main app server starts with:
+
+```text
+codex.exe app-server --analytics-default-enabled --remote-control
+```
+
+The script creates timestamped backups of `app.asar` and `Codex.exe` before patching. On verification failure, it restores both files and restarts Codex.
+
+## Fallback Separate Server Path
+
+The fallback path runs a separate bundled `codex.exe app-server` process with `--remote-control`.
 
 This avoids modifying:
 
@@ -40,14 +58,14 @@ The auto-start installer first tries Windows Task Scheduler. If that is denied b
 HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexRemoteControlServer
 ```
 
-## App.asar Patch
+## App.asar Patch Notes
 
-`scripts\Enable-CodexRemoteControl.ps1` is the older app.asar patch path. Treat it as experimental for current Codex Desktop builds.
+`scripts\Enable-CodexRemoteControl.ps1` is the older app.asar patch path. Prefer `scripts\Apply-CodexAppAsarRemoteControlPatchWithExeIntegrity.ps1` for current Codex Desktop builds.
 
 Important notes:
 
 - Do not add `remote_control = true` blindly to `config.toml`; if it lands under an env table it can break startup with `invalid type: boolean true, expected a string`.
-- Recent app packages include integrity metadata. Same-length byte replacements alone may not be enough.
+- Recent Electron packages embed an `AsarIntegrity` hash in `Codex.exe`. Same-length byte replacements and asar internal integrity updates are not enough; `Codex.exe` must be refreshed to match the patched asar header hash.
 - Always keep a timestamped `app.asar` backup and verify app startup after patching.
 
 ## Verify Running Process

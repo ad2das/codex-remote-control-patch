@@ -60,6 +60,35 @@ function Get-RemoteControlProcess {
         Select-Object -First 1
 }
 
+function Test-PortAvailable {
+    param([int]$TargetPort)
+
+    $listener = $null
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), $TargetPort)
+        $listener.Start()
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($listener) {
+            $listener.Stop()
+        }
+    }
+}
+
+function Get-AvailablePort {
+    param([int]$PreferredPort)
+
+    for ($candidate = $PreferredPort; $candidate -lt ($PreferredPort + 50); $candidate++) {
+        if (Test-PortAvailable -TargetPort $candidate) {
+            return $candidate
+        }
+    }
+
+    throw "No available localhost port found near $PreferredPort."
+}
+
 function Invoke-AppServerRequest {
     param(
         [System.Net.WebSockets.ClientWebSocket]$Socket,
@@ -101,7 +130,6 @@ function Invoke-AppServerRequest {
 function Test-RemoteControlStatus {
     param([int]$TargetPort)
 
-    Add-Type -AssemblyName System.Net.WebSockets.Client
     $socket = [System.Net.WebSockets.ClientWebSocket]::new()
     try {
         $null = $socket.ConnectAsync([Uri]"ws://127.0.0.1:$TargetPort/", [Threading.CancellationToken]::None).GetAwaiter().GetResult()
@@ -129,8 +157,15 @@ try {
         exit 0
     }
 
+    if (-not (Test-PortAvailable -TargetPort $Port)) {
+        $oldPort = $Port
+        $Port = Get-AvailablePort -PreferredPort ($Port + 1)
+        Write-LauncherLog "preferred_port_busy oldPort=$oldPort selectedPort=$Port"
+    }
+
     $codexExe = Get-CodexExePath
-    $serverLog = Join-Path $logDir "server-$Port.log"
+    $serverOutLog = Join-Path $logDir "server-$Port.out.log"
+    $serverErrLog = Join-Path $logDir "server-$Port.err.log"
     $args = @(
         "app-server",
         "--listen",
@@ -139,7 +174,7 @@ try {
         "--remote-control"
     )
 
-    $process = Start-Process -FilePath $codexExe -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverLog -PassThru
+    $process = Start-Process -FilePath $codexExe -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $serverOutLog -RedirectStandardError $serverErrLog -PassThru
     Start-Sleep -Seconds 3
 
     if ($process.HasExited) {

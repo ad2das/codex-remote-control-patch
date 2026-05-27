@@ -1,10 +1,43 @@
 param(
-    [string]$PackageRoot = "C:\Users\Administrator\Downloads\OpenAI.Codex_26.519.5221.0_x64__2p2nqsd0c76g0",
+    [string]$PackageRoot = "",
     [int]$StartupWaitSeconds = 35
 )
 
 $ErrorActionPreference = "Stop"
 
+function Get-CodexPackageRoot {
+    if ($PackageRoot) {
+        return (Resolve-Path -LiteralPath $PackageRoot).Path
+    }
+
+    $paths = New-Object System.Collections.Generic.List[string]
+
+    Get-CimInstance Win32_Process |
+        Where-Object { $_.ExecutablePath -match "\\OpenAI\.Codex_.*\\app\\Codex\.exe$" } |
+        ForEach-Object {
+            $paths.Add((Split-Path -Parent (Split-Path -Parent $_.ExecutablePath)))
+        }
+
+    $downloads = Join-Path $env:USERPROFILE "Downloads"
+    if (Test-Path -LiteralPath $downloads) {
+        Get-ChildItem -LiteralPath $downloads -Directory -Filter "OpenAI.Codex_*_x64__2p2nqsd0c76g0" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            ForEach-Object { $paths.Add($_.FullName) }
+    }
+
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if (
+            (Test-Path -LiteralPath (Join-Path $path "app\Codex.exe")) -and
+            (Test-Path -LiteralPath (Join-Path $path "app\resources\app.asar"))
+        ) {
+            return (Resolve-Path -LiteralPath $path).Path
+        }
+    }
+
+    throw "Codex package root was not found. Pass -PackageRoot explicitly."
+}
+
+$PackageRoot = Get-CodexPackageRoot
 $appRoot = Join-Path $PackageRoot "app"
 $codexExe = Join-Path $appRoot "Codex.exe"
 $asarPath = Join-Path $appRoot "resources\app.asar"

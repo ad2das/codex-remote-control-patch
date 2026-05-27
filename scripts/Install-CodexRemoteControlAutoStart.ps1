@@ -6,7 +6,10 @@ $ErrorActionPreference = "Stop"
 
 $taskName = "CodexRemoteControlServer"
 $scriptPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "Start-CodexRemoteControlServer.ps1")).Path
-$pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
+$pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (-not $pwsh) {
+    $pwsh = (Get-Command powershell.exe -ErrorAction Stop).Source
+}
 
 $action = New-ScheduledTaskAction `
     -Execute $pwsh `
